@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 HORSE = "Baldur"  # "Albin" or "Baldur" or "Sinus" or "Sigge" or "Sam"
 
 # Use a specific straight-section window index (0-6) or None for full recording
-SEGMENT_INDEX: int | None = None #4
+SEGMENT_INDEX: int | None = 4 #4
 
 # Serial port for the Arduino. Set this to e.g. "COM5" on Windows or "/dev/ttyACM0" on Linux.
 # Leave as None to auto-select the only available serial device when possible.
