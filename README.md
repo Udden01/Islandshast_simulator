@@ -4,6 +4,9 @@ Kandidatarbete vid Institutionen för fysik på Chalmers. Kandidatarbetet har gj
 1. Run the command uv sync in the terminal for the project
 2. Om koden ska köras på simulatorn behöver även platform IO extension till VS code vara instalerat (Adruino Due mappen) och en Usb kabel behöver vara inkoplad i datorn som i andra enden är inkoplad til Adruino Due programeringsport (microUsb)  
 3. main.py eller main_simulering.py kan nu köras. Inställningar finns att justera i config.py (vilken data som simuleras o.s.v.). I main.py kan man även justera:
+
    SEND_TO_ARDUINO = False #om simuleringen ska köras på riggen
+   
    simulering_köras = True #om den visar en virituel simuleringen av platfomens rörelser och plottar datan
-   Sinus_rörelse = False #om en sinus rörelse ska simuleras iställe för datan 
+   
+   Sinus_rörelse = False #om en sinus rörelse ska simuleras iställe för datan
