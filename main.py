@@ -174,33 +174,12 @@ def main():
         # Send positions + velocities to Arduino
     SEND_TO_ARDUINO = False
     simulering_köras = True
-        # Looping options: set LOOP_SEGMENT to True to repeatedly stream
-        # the selected `SEGMENT_INDEX`. Set LOOP_COUNT to an int to repeat
-        # that many times, or to None to loop until interrupted (Ctrl-C).
-    LOOP_SEGMENT = False
-    LOOP_COUNT: int | None = 2
-
     Sinus_rörelse = False
 
     # Initialize platform early since both paths need it
     platform = StewartPlatform.from_config()
     print(f"Neutral leg length: {platform.neutral_leg_length * 1000:.1f} mm")
     
-   
-    # stream_unit_step_to_arduino(
-    #         port=SERIAL_PORT,
-    #         baudrate=115200,
-    #         start_position_mm=50.0,
-    #         end_position_mm=10.0,
-    #         step_motor=None,              # 0 = motor A only, None = all motors
-    #         hold_start_s=3.0,
-    #         hold_end_s=10.0,
-    #         packet_dt_ms=50,
-    #         startup_delay_s=3.0,
-    #         calibrate_before_stream=True,
-    #         calibration_wait_s=18.0,
-    #     )
-    # return
     if Sinus_rörelse is False:
         #1. laddar sensordata från .mat filer
         mat_file = DATA_DIR / f"Sensor_Back_{HORSE}_exported.mat"
@@ -273,72 +252,21 @@ def main():
     if SEND_TO_ARDUINO:
         #stream_ik_to_arduino("COM5", 115200, ik_result)     # Windows
         #stream_ik_to_arduino("/dev/ttyACM0", 115200, ik_result)  # Linux
-        # with serial.Serial("COM5", 115200, timeout=1) as ser:
-        #     time.sleep(2)
-        #     positions = [20, 30, 0, 0, 0, 0]
-        #     velocities = [0, 0, 0, 0, 0, 0]
-        #     pkt = build_packet(1, 10, positions, velocities)
-        #     ser.write(pkt)
-
-        try:
-            if SEGMENT_INDEX is not None and LOOP_SEGMENT:
-                if LOOP_COUNT is None:
-                    iter_idx = 0
-                    print("Looping segment forever (Ctrl-C to stop)")
-                    while True:
-                        iter_idx += 1
-                        print(f"Starting loop iteration {iter_idx}")
-                        stream_ik_to_arduino(
-                            port=SERIAL_PORT,
-                            baudrate=115200,
-                            ik_result=ik_result,
-                            neutral_leg_length_m=platform.neutral_leg_length,
-                            actuator_center_mm=50.0,
-                            actuator_min_mm=0.0,
-                            actuator_max_mm=100.0,
-                            send_every_nth=5,
-                            startup_delay_s=3.0,
-                            batch_size=1,
-                            wait_between_batches_s=0.05,
-                            calibrate_before_stream=True,
-                            calibration_wait_s=18.0,
-                        )
-                else:
-                    for i in range(LOOP_COUNT):
-                        print(f"Starting loop iteration {i+1}/{LOOP_COUNT}")
-                        stream_ik_to_arduino(
-                            port=SERIAL_PORT,
-                            baudrate=115200,
-                            ik_result=ik_result,
-                            neutral_leg_length_m=platform.neutral_leg_length,
-                            actuator_center_mm=50.0,
-                            actuator_min_mm=0.0,
-                            actuator_max_mm=100.0,
-                            send_every_nth=5,
-                            startup_delay_s=0.0,
-                            batch_size=1,
-                            wait_between_batches_s=0.05,
-                            calibrate_before_stream=True,
-                            calibration_wait_s=18.0,
-                        )
-            else:
-                stream_ik_to_arduino(
-                    port=SERIAL_PORT,
-                    baudrate=115200,
-                    ik_result=ik_result,
-                    neutral_leg_length_m=platform.neutral_leg_length,
-                    actuator_center_mm=50.0,
-                    actuator_min_mm=0.0,
-                    actuator_max_mm=100.0,
-                    send_every_nth=5,
-                    startup_delay_s=3.0,
-                    batch_size=1,
-                    wait_between_batches_s=0.05,
-                    calibrate_before_stream=True,
-                    calibration_wait_s=18.0,
-                )
-        except KeyboardInterrupt:
-            print("Streaming loop interrupted by user")
+        stream_ik_to_arduino(
+          port=SERIAL_PORT,
+          baudrate=115200,
+          ik_result=ik_result,
+          neutral_leg_length_m=platform.neutral_leg_length,
+          actuator_center_mm=50.0,
+          actuator_min_mm=0.0,
+          actuator_max_mm=100.0,
+          send_every_nth=5,
+          startup_delay_s=3.0,
+          batch_size=1,
+          wait_between_batches_s=0.05,
+          calibrate_before_stream=True,
+          calibration_wait_s=18.0,
+        )
 
     #ik_result = platform.compute_trajectory_ik(raw_trajectory)
     #filtrerar vi inte vi absolut yaw och platformen kommer vara 90graders felvriden.
@@ -349,7 +277,6 @@ def main():
     leg_mm = ik_result.leg_lengths * 1000.0
     neutral_mm = platform.neutral_leg_length * 1000.0
     relative_mm = leg_mm - neutral_mm
-#kommentera bort om siumleringen inte sak köras
     if simulering_köras:
         for i in range(6):
             print(f"Leg {i+1} first 10 relative values (mm):")
