@@ -1,5 +1,5 @@
 """
-Horse Riding Simulator — Stewart Platform Motion Analysis
+Main fil för tölt simulation med Stewart-plattform på fysiska simulatorn
 
 Pipeline:
   1. Load phone sensor data (.mat) from a horse ride
@@ -12,6 +12,7 @@ Configuration: edit config.py to change horse, segment, filter, geometry, etc.
 """
 
 
+#nödvändiga imports
 from pathlib import Path
 
 import numpy as np
@@ -28,15 +29,22 @@ import serial
 import time
 
 
-DATA_DIR = Path(__file__).parent  # .mat filer är projectets root 
+#Ladda in datafilerna med rådata
+DATA_DIR = Path(__file__).parent   
 amplitud = 0.005   # meter
 freq = 0.2          # Hz
-axis = "all"      # surge / sway / heave / all
+axis = "all"      #  kan vara surge / sway / heave / all
 
+#Funktion som skär ut en del av rörelsebanan
 def _slice_trajectory(traj: Trajectory6DOF, t0: float, t1: float) -> Trajectory6DOF: #kan användas för att bara köra en del av ridningen (en raksträcka)
-    """Extract a time window from a trajectory, resetting time to start at 0."""
+    
+    #filter som väljer tidpunkter som ska finnas i utagna intervallet
     mask = (traj.time >= t0) & (traj.time <= t1)
+
+    #ny tidsvekor för valda intervallet
     t = traj.time[mask] - traj.time[mask][0]
+
+    #returnerar ny rörelsebana med endast valt tidsintervall
     return Trajectory6DOF(
         time=t,
         surge=traj.surge[mask],
@@ -48,19 +56,23 @@ def _slice_trajectory(traj: Trajectory6DOF, t0: float, t1: float) -> Trajectory6
         sample_rate=traj.sample_rate,
     )
 
-# ─────────────────────────────────────────────────────────────
-# Blend two segments (C1 continuity)
-# ─────────────────────────────────────────────────────────────
+#Funktion som skär ut flera segment och blandar dem för att få en mjuk övergång mellan segmenterna,
 def _blend_segments(seg1: Trajectory6DOF, seg2: Trajectory6DOF, blend_samples: int) -> Trajectory6DOF: #blandar 2 segmenter så det blir en mjuk övergång, minska rykicghet emllan segment
+    #tidssteg mellan två mätpunkter
     dt = 1.0 / seg1.sample_rate
 
-    def blend_array(a1, a2): #balndar arrayerna för en DOF
+    #blandar rörelsekomponenterna för varje DOF separat
+    def blend_array(a1, a2): 
+
+        #start värde av segment 2 och slutvärde av segment 1
         p0 = a1[-1]
         p1 = a2[0]
 
+        #hastighet i slutet av segment 1 och i början av segment 2
         v0 = (a1[-1] - a1[-2]) / dt
         v1 = (a2[1] - a2[0]) / dt
 
+        #normaliserad tidsvektor för blandingen
         t = np.linspace(0, 1, blend_samples)
 
         # Cubic Hermite, mjuk och deriverbar övergång som tar hänsyn till både position och hastighet i start och slutpunkterna mellan datan: 
@@ -69,11 +81,14 @@ def _blend_segments(seg1: Trajectory6DOF, seg2: Trajectory6DOF, blend_samples: i
         h01 = -2*t**3 + 3*t**2
         h11 = t**3 - t**2
 
+        #returnerar mjuk interpolerad övergång mellan segmenten
         return h00*p0 + h10*v0*dt + h01*p1 + h11*v1*dt
 
-    time = seg1.time[-1] + np.arange(1, blend_samples + 1) * dt #skapa en tidsvektor för blendningen som börjar efter seg1 och har lika många punkter som blend_samples
+    #skapa en tidsvektor för blendningen som börjar efter seg1 och har lika många punkter som blend_samples
+    time = seg1.time[-1] + np.arange(1, blend_samples + 1) * dt 
 
-    return Trajectory6DOF( #skapa en ny Trajectory6DOF som är blendningen av seg1 och seg2)
+    #skapa en ny Trajectory6DOF som är blandning av seg1 och seg2, alltså alla mjuka övergångar för alla sex frihetsgrader
+    return Trajectory6DOF( 
         time=time,
         surge=blend_array(seg1.surge, seg2.surge),
         sway=blend_array(seg1.sway, seg2.sway),
@@ -84,15 +99,19 @@ def _blend_segments(seg1: Trajectory6DOF, seg2: Trajectory6DOF, blend_samples: i
         sample_rate=seg1.sample_rate,
     )
 
-def _slice_trajectory_and_stitch(traj, windows, blend_time=0.1): #skär ut segment från traj baserat på windows/raksträckorna, och blanda dem med blend_time för att få en mjuk övergång mellan segmenten
+#Klipper ut fler tidsintervall och sätter ihop de till en rörelsebana
+def _slice_trajectory_and_stitch(traj, windows, blend_time=0.1):
     segments = [] 
     time_offset = 0.0
     dt = 1.0 / traj.sample_rate
+    #beräknar hur många mätpunkter som behövs för att blanda övergången mellan segmenten, baserat på önskad blendningstid och samplingsfrekvensen
     blend_samples = int(blend_time / dt)
 
+    #variabel för lagra föregående segment
     prev_segment = None
 
-    for t0, t1 in windows: #loopa genom alla windows/raksträckor, skär ut segmentet, blanda det med föregående segment om det finns, och lägg till det i listan av segment
+    #går igeom alla tidsintervaller som ska klippas ut, skapar segment för varje intervall och blandar dem med föregående segment för att få en mjuk övergång
+    for t0, t1 in windows: 
         mask = (traj.time >= t0) & (traj.time <= t1)
         t = traj.time[mask]
 
@@ -109,11 +128,13 @@ def _slice_trajectory_and_stitch(traj, windows, blend_time=0.1): #skär ut segme
             sample_rate=traj.sample_rate,
         )
 
-        if prev_segment is not None: #
+        if prev_segment is not None: 
+            #blandar så det blir mjukövergång mellan föregående segment och det nya segmentet
             blend = _blend_segments(prev_segment, segment, blend_samples)
             segments.append(blend)
             time_offset = blend.time[-1]
 
+            #beräknas hur mycket ett segment behöver förskjutas i tid för att det ska följa direkt efter det föregående segmentet, inklusive blendningstiden. Detta säkerställer att tidsvektorn är kontinuerlig och att det inte finns några hopp i tiden mellan segmenten.
             shift = time_offset - segment.time[0] + dt
             segment = Trajectory6DOF(
                 time=segment.time + shift,
@@ -130,7 +151,8 @@ def _slice_trajectory_and_stitch(traj, windows, blend_time=0.1): #skär ut segme
         time_offset = segment.time[-1]
         prev_segment = segment
 
-    return Trajectory6DOF( #stitcha ihop alla segment i listan till en enda Trajectory6DOF, genom att konkatenera deras arrayer. Tidsvektorn kommer att vara kontinuerlig tack vare blendningen och tidsförskjutningen.
+    #returnerar en ny rörelsebana med alla segment med mjuka övergångar 
+    return Trajectory6DOF( 
         time=np.concatenate([seg.time for seg in segments]),
         surge=np.concatenate([seg.surge for seg in segments]),
         sway=np.concatenate([seg.sway for seg in segments]),
@@ -140,18 +162,23 @@ def _slice_trajectory_and_stitch(traj, windows, blend_time=0.1): #skär ut segme
         yaw=np.concatenate([seg.yaw for seg in segments]),
         sample_rate=segments[0].sample_rate,
     )
+
+#funktion som skapar en sinusformad translationrörelse
 def sinus_translation(time: np.ndarray, amplitude: float, freq: float, axis: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]: #skapar en sinusformad translation i en given axel (surge/sway/heave) för testning av plattformen
+    
+    #sinusformad rörelse baserat på tid, amplitud och frekvens
     x = amplitude * np.sin(2 * np.pi * freq * time)
 
     surge = np.zeros_like(time)
     sway = np.zeros_like(time)
     heave = np.zeros_like(time)
 
-    #Temp
+    #alla tre axlarna har samma frekvens
     surge_freq = freq
     sway_freq = freq
     heave_freq = freq
 
+    #definierar fasförskjutning för alla rörelseriktningar
     phase= 0.0
     surge_phase = np.radians(-180)
     sway_phase = np.radians(-55)
@@ -167,27 +194,28 @@ def sinus_translation(time: np.ndarray, amplitude: float, freq: float, axis: str
         surge = 0.007 * np.sin(2 * np.pi * surge_freq * time+ surge_phase)
         sway = 0.008 * np.sin(2 * np.pi * sway_freq * time + sway_phase)
         heave = 0.011 * np.sin(2 * np.pi * heave_freq * time + heave_phase)
+    #returnerar de tre translationsrörelserna
     return surge, sway, heave
 
-
+#definierar prograammets huvudfunktion
 def main():
-        # Send positions + velocities to Arduino
+    
     SEND_TO_ARDUINO = False
     simulering_köras = True
     Sinus_rörelse = False
 
-    # Initialize platform early since both paths need it
+    # skapar Stewart-plattform utifrån konfigurationen i config.py
     platform = StewartPlatform.from_config()
-    print(f"Neutral leg length: {platform.neutral_leg_length * 1000:.1f} mm")
+    print(f"ben langd: {platform.neutral_leg_length * 1000:.1f} mm")
     
     if Sinus_rörelse is False:
-        #1. laddar sensordata från .mat filer
+        #laddar sensordata från .mat filer
         mat_file = DATA_DIR / f"Sensor_Back_{HORSE}_exported.mat"
         print(f"Loading {mat_file.name} ...")
         sensor_full = load_sensor_data(mat_file, horse=HORSE, sensor_location="Back")
         print(f"  Loaded {len(sensor_full.time)} samples, "
             f"{sensor_full.time[-1]:.1f} s, {sensor_full.sample_rate:.0f} Hz")
-        # 2. rekonstruerar 6-DOF rörelse från komplettsensordata, med amplitud och frekvensskalning
+        # rekonstruerar 6-DOF rörelse från komplettsensordata, med amplitud och frekvensskalning
         # Viktigt! att köra på hela inspelningen för att undvika filtertransienter, 
         # bandpassfiltret behöver flera sekunder på sig att stabilisera sig så korta segment (10s) kan få kraftiga tranisenter som förstör signalen.
         print("Reconstructing 6-DOF motion (full recording) ...")
@@ -197,9 +225,7 @@ def main():
         print("Filtering trajectory for Stewart platform workspace ...")
         filtered_full = filter_trajectory(raw_full)
 
-        # ── 3. Optionally slice to a straight-riding segment for display ─────
-        #if semgent_index is not None, loop through all segments, stitch them together.
-        windows = STRAIGHT_WINDOWS[HORSE]
+        # skär ut segmentet som ska köras, eller blanda flera segment för att få en mjuk övergång mellan dem
 
         if SEGMENT_INDEX is not None:
             t0, t1 = windows[SEGMENT_INDEX]
@@ -212,17 +238,18 @@ def main():
             # raw_trajectory = raw_full
             # filtered_trajectory = filtered_full
 
-        # ── 5. Stewart platform inverse kinematics ───────────────────────────
+        # Stewart platform inverse kinematics ───────────────────────────
         print("Running inverse kinematics ...")
         ik_result = platform.compute_trajectory_ik(filtered_trajectory)
     elif Sinus_rörelse is True:
         print("Applying sinusoidal translation for testing ...")
-        # Generate independent time array for sine wave test
+        #genererar en tidsvektor baserat på önskad samplingsfrekvens och varaktighet för den sinusformade rörelsen
         sample_rate = 100.0  # Hz
         duration = 10.0  # seconds
         num_samples = int(sample_rate * duration)
         time_array = np.linspace(0, duration, num_samples)
         
+        #skapar sinusformade rörelser i surge, sway och heave baserat på den genererade tidsvektorn, med specificerad amplitud och frekvens
         surge, sway, heave = sinus_translation(
              time_array,
              amplitude=0.03, # meter
@@ -230,7 +257,7 @@ def main():
              axis="heave",
          )
         
-        # Create trajectory with zeros for rotations
+        # skapar en test rörelsebana med de genererade sinusformade rörelserna, där alla rotationskomponenter (roll, pitch, yaw) är noll, och specificerar samplingsfrekvensen
         test_trajectory = Trajectory6DOF(
             time=time_array,
             surge=surge,
@@ -242,13 +269,15 @@ def main():
             sample_rate=sample_rate,
         )
         
-        # For visualization, use same trajectory for both raw and filtered
+        # För testning av plattformen 
         raw_trajectory = test_trajectory
         filtered_trajectory = test_trajectory
         
         ik_result = platform.compute_trajectory_ik(test_trajectory)
 
 
+
+    #kontrollerar om all data skickats till Arduino
     if SEND_TO_ARDUINO:
         #stream_ik_to_arduino("COM5", 115200, ik_result)     # Windows
         #stream_ik_to_arduino("/dev/ttyACM0", 115200, ik_result)  # Linux
@@ -270,7 +299,7 @@ def main():
 
     #ik_result = platform.compute_trajectory_ik(raw_trajectory)
     #filtrerar vi inte vi absolut yaw och platformen kommer vara 90graders felvriden.
-    # ── 6. Actuator analysis ─────────────────────────────────────────────
+    # analys av ställdon─────────────────────────────────────────────
     ik_result.print_actuator_summary()
     leg_mm = ik_result.leg_lengths * 1000.0
 
@@ -288,7 +317,7 @@ def main():
                 f"rel max={relative_mm[:, i].max():.2f} mm"
             )
 
-        # ── 7. Visualize ─────────────────────────────────────────────────────
+        #visualisering ─────────────────────────────────────────────────────
         print("Generating plots ...")
         plot_analysis(raw_trajectory, filtered_trajectory, ik_result)
         _fig, _anim = animate_platform(platform, filtered_trajectory, ik_result)
