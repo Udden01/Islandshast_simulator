@@ -1,0 +1,15 @@
+[project]
+name = "Islandshast_simulator"
+version = "0.1.0"
+description = "Horse riding simulator - Stewart platform motion analysis"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "h5py",
+    "pymatreader>=1.1.0",
+    "pyserial>=3.5",
+    "ipykernel>=7.2.0",
+]
