@@ -1,8 +1,6 @@
 #include <Arduino.h>
 
-// ==================================================
-// Motor class
-// ==================================================
+//motor  klass
 class motor {
 public:
   // Pins
@@ -11,37 +9,36 @@ public:
   int chn1;
   int chn2;
 
-  // Calibration
+  // pulser per mm
   float pulserPerMm = 0.0f;
 
-  // Encoder state
+  //puls räknare och tidigare tillstånd för encoder
   volatile long pulseRaknare = 0;
   volatile uint8_t prevState = 0;
 
+  //skyddad kopia av räknare för att läsa i kontrollloop utan att oroa sig för avbrott
   long skyddadRaknare = 0;
   long tidigareKontrollRaknare = 0;
 
-  // Measured velocity
+  // Hastighet
   float hastighetPulserPerS = 0.0f;
   float filtreradHastighetMmS = 0.0f;
 
-  // Target/debug
+  // mål position i pulser
   long malPos = 0;
 
-  // Motor command state
+  // motor i rörelse flagga och aktuell PWM för rampning
   bool iRorelse = false;
   int aktuellPWM = 0;
 
-  // Controller integrators
+  //kontroller integraler
   float integralFelMm = 0.0f;
   float integralHastighetsFel = 0.0f;
 
   long tidigareMalPos = -1;
 };
 
-// ==================================================
-// Motor objects
-// ==================================================
+//motor objekten
 motor A;
 motor B;
 motor C;
@@ -50,33 +47,26 @@ motor E;
 motor F;
 
 static const uint8_t antalMotorer = 6;
+//array med pekare till alla motorer för enklare loopar
 motor* allaMotorer[antalMotorer] = {&A, &B, &C, &D, &E, &F};
 
-// ==================================================
-// Options
-// ==================================================
+
 bool move_utanreglerig = false;
 
-// Fine trim per motor in mm
+// motor trim i mm för att justera mekaniska skillnader mellan aktuatorerna, kan vara positiv eller negativ
 static const int motorTrimMm[antalMotorer] = {0, 0, 0, 0, 0, 0};
 
-// ==================================================
-// Calibration limits
-// ==================================================
+// Kalibrering resultat: max och min pulser per motor
 long maxPulserPerMotor[antalMotorer] = {0};
 long minPulserPerMotor[antalMotorer] = {0};
 
-// ==================================================
-// Controller constants
-// ==================================================
+
 constexpr unsigned long kontrollperiodUs = 10000; // 10 ms = 100 Hz
 
-// Outer position loop:
-// position error [mm] -> velocity correction [mm/s]
+//yttre position-till-hastighet regulator: position error [mm] -> velocity correction [mm/s]
 constexpr float kpPositionTillHastighet = 5.0f;
 
-// Inner velocity loop:
-// velocity error [mm/s] -> PWM
+//
 constexpr float kpHastighet = 4.0f;
 constexpr float kiHastighet = 20.0f;
 
