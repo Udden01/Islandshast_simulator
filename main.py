@@ -1,14 +1,14 @@
 """
 Main fil för tölt simulation med Stewart-plattform på fysiska simulatorn
+Arkitekturen:
 
-Pipeline:
-  1. Load phone sensor data (.mat) from a horse ride
-  2. Reconstruct 6-DOF saddle trajectory (translations + rotations)
-  3. Filter to Stewart platform workspace (bandpass + saturation)
-  4. Compute Stewart platform inverse kinematics (6 leg lengths)
-  5. Analyse actuator requirements and display 3D animation
+Läs in telefonsensordata (.mat) från en hästridtur
+Rekonstruera sadelns 6-DOF-bana (translationer + rotationer)
+Filtrera signalen till Stewartplattformens arbetsområde (bandpassfilter + mättnad)
+Beräkna Stewartplattformens inversa kinematik (6 benlängder)
+Analysera aktuatorkrav och visa 3D-animation
 
-Configuration: edit config.py to change horse, segment, filter, geometry, etc.
+Konfiguration: redigera config.py för att ändra häst, segment, filter, geometri med mera.
 """
 
 
