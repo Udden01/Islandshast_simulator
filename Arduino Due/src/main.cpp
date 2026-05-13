@@ -3,7 +3,7 @@
 //motor  klass
 class motor {
 public:
-  // Pins
+  // Pinnar
   int pwm;
   int dir;
   int chn1;
@@ -66,40 +66,39 @@ constexpr unsigned long kontrollperiodUs = 10000; // 10 ms = 100 Hz
 //yttre position-till-hastighet regulator: position error [mm] -> velocity correction [mm/s]
 constexpr float kpPositionTillHastighet = 5.0f;
 
-//
+//Regulator för hastighet: velocity error [mm/s] -> PWM
 constexpr float kpHastighet = 4.0f;
 constexpr float kiHastighet = 20.0f;
 
-// Velocity low-pass filter
+// Hastighet filter
 constexpr float hastighetsFilterAlpha = 0.25f;
 
-// Limits
+// Hastighetesgränser
 constexpr float maxHastighetMmS = 80.0f;
 constexpr float maxIntegralHastighet = 30.0f;
 
+//PWM gränser
 constexpr int maxPWM = 240;
 constexpr int minPWM = 12;
 
-// Static friction compensation
+// statisk friktionskompensation i PWM steg, justera efter behov för att övervinna startfriktion
 constexpr int friktionsPWM = 18;
 
-// Stop behavior
+// Toleranser för att avgöra när vi kan stoppa motorn, både i position och hastighet
 constexpr float positionToleransMm = 0.5f;
 constexpr float hastighetToleransMmS = 2.0f;
 
-// Safety limits in actuator mm
+// Mekaniska gränser i mm, används för säkerhetsstopp och för att begränsa målpositioner. Justera efter din aktuators faktiska rörelseomfång.
 constexpr float maxPositionMm = 100.0f;
 constexpr float minPositionMm = 0.0f;
 
-// PWM ramping
+// PWM ramp steg per kontrollcykel
 constexpr int pwmStegPerCykel = 8;
 
-// Timeout if no new packet arrives
+// Timeout om inga nya paket kommer in
 constexpr unsigned long packetTimeoutMs = 500;
 
-// ==================================================
-// Packet settings
-// ==================================================
+//paket information
 static const uint8_t antalPaketAktuatorer = 6;
 static const uint8_t sync1 = 0xAA;
 static const uint8_t sync2 = 0x55;
@@ -110,6 +109,7 @@ static const uint8_t paketStorlek = 7 + (4 * antalPaketAktuatorer);
 
 static bool kalibreringKlar = false;
 
+// Struktur för att hålla data från mottagna paket
 struct AktuatorPaket {
   uint16_t sekvens;
   uint16_t dt_ms;
@@ -117,29 +117,33 @@ struct AktuatorPaket {
   int16_t hastigheterMmS[antalPaketAktuatorer];
 };
 
+// Buffer för att ta emot paket och index för att spåra mottagning
 uint8_t rxBuffer[paketStorlek];
 uint8_t rxIndex = 0;
 
+//mottagna paket
 uint32_t mottagenPaketAntal = 0;
+
+//dåliga paket
 uint32_t daligPaketAntal = 0;
+//sekvensnummer för senaste mottagna paket
 uint16_t senastMottagnSekvens = 0;
 
+// Tid för senaste debugutskrift och senaste mottagna paket
 unsigned long senasteDebugPrintUs = 0;
 unsigned long senastPaketMs = 0;
 
-// Latest received targets
+//mål positioner och hastigheter i mm och mm/s, uppdateras av mottagna paket och används i kontrollloop
 int malPosisjonerMm[antalMotorer] = {100, 100, 100, 100, 100, 100};
 int malHastigheterMmS[antalMotorer] = {0, 0, 0, 0, 0, 0};
 
-// ==================================================
-// Encoder interrupts
-// ==================================================
+//uppdaterar räknare baserat på encoderövergångar, kallas från alla encoder interrupt handlers
 void uppdateraEncoderRaknare(motor &Motor) {
   uint8_t state = (digitalRead(Motor.chn1) << 1) | digitalRead(Motor.chn2);
   uint8_t combined = (Motor.prevState << 2) | state;
 
   switch (combined) {
-    // Forward
+    // Frammåt
     case 0b0001:
     case 0b0111:
     case 0b1110:
@@ -147,7 +151,7 @@ void uppdateraEncoderRaknare(motor &Motor) {
       Motor.pulseRaknare--;
       break;
 
-    // Backward
+    // Bakåt
     case 0b0010:
     case 0b0100:
     case 0b1101:
@@ -156,13 +160,14 @@ void uppdateraEncoderRaknare(motor &Motor) {
       break;
 
     default:
-      // Invalid transition / noise
+      // ogiltig övergång, kan bero på brus eller snabb rörelse, ignorera
       break;
   }
 
   Motor.prevState = state;
 }
 
+// Avbrottshanterare för encoder, två per motor för att fånga alla övergångar
 void irqA1() { uppdateraEncoderRaknare(A); }
 void irqA2() { uppdateraEncoderRaknare(A); }
 
@@ -181,9 +186,7 @@ void irqE2() { uppdateraEncoderRaknare(E); }
 void irqF1() { uppdateraEncoderRaknare(F); }
 void irqF2() { uppdateraEncoderRaknare(F); }
 
-// ==================================================
-// Encoder copy and velocity update
-// ==================================================
+//updaterar skyddad räknare
 void updateraSkyddadRaknare() {
   noInterrupts();
   for (uint8_t i = 0; i < antalMotorer; i++) {
@@ -192,17 +195,19 @@ void updateraSkyddadRaknare() {
   interrupts();
 }
 
+//uppdaterar motorhastighet 
 void updateraMotorHastighet(motor &Motor, float dt) {
   if (dt <= 0.000001f) {
     return;
   }
-
+  //tar fram nuvarande skyddad räknare
   long nuvarande = Motor.skyddadRaknare;
+  //beräknar skillnaden i pulser sedan senaste kontrollräknaren
   long deltaPulser = nuvarande - Motor.tidigareKontrollRaknare;
 
   Motor.hastighetPulserPerS = deltaPulser / dt;
   Motor.tidigareKontrollRaknare = nuvarande;
-
+  //beräknar hastighet i mm/s och filtrerar den för att få en stabilare hastighetsmätning
   if (Motor.pulserPerMm > 0.0f) {
     float rawHastighetMmS = Motor.hastighetPulserPerS / Motor.pulserPerMm;
 
@@ -214,20 +219,19 @@ void updateraMotorHastighet(motor &Motor, float dt) {
   }
 }
 
-// ==================================================
-// Simple movement mode, kept only for comparison
-// ==================================================
+// enkel rörelsefunktion utan reglering, används för att snabbt testa motorer och mekanik
 void move(motor &Motor, int malMm) {
   if (Motor.pulserPerMm <= 0.0f) {
     analogWrite(Motor.pwm, 0);
     return;
   }
-
+  //beräknar mål i pulser baserat på mål i mm och pulser per mm
   int begransadMalMm = constrain(malMm, 0, 100);
   long malPulser = (long)(begransadMalMm * Motor.pulserPerMm);
 
   long nuvarandePulser = Motor.skyddadRaknare;
 
+  // Hitta motorindex för att kolla max pulser från kalibrering
   long motorIndex = -1;
   for (uint8_t i = 0; i < antalMotorer; i++) {
     if (allaMotorer[i] == &Motor) {
@@ -236,11 +240,13 @@ void move(motor &Motor, int malMm) {
     }
   }
 
+    // Om max pulser per motor är definierat från kalibrering, använd det som gräns, annars använd en generell gräns baserat på mekanisk maxposition
   long maxPulserLimit =
       (motorIndex >= 0 && maxPulserPerMotor[motorIndex] > 0)
       ? maxPulserPerMotor[motorIndex]
       : (long)(100.0f * Motor.pulserPerMm);
 
+  // Säkerhetsstopp: om nuvarande pulser är utanför det mekaniska området, stoppa motorn och sätt iRorelse till false
   if (nuvarandePulser > maxPulserLimit || nuvarandePulser < 0) {
     Motor.iRorelse = false;
     Motor.aktuellPWM = 0;
@@ -248,6 +254,7 @@ void move(motor &Motor, int malMm) {
     return;
   }
 
+  // Begränsa mål i pulser baserat på kalibrering eller mekaniska gränser
   if (motorIndex >= 0 && maxPulserPerMotor[motorIndex] > 0) {
     malPulser = constrain(malPulser, 0, maxPulserPerMotor[motorIndex]);
   }
@@ -266,18 +273,10 @@ void move(motor &Motor, int malMm) {
   Motor.iRorelse = true;
 }
 
-// ==================================================
-// Cascaded controller
-//
-// refPosMm  = target actuator position from packet
-// refVelMmS = target actuator velocity from packet
-//
-// Outer loop:
-//   position error -> velocity correction
-//
-// Inner loop:
-//   velocity error -> PWM
-// ==================================================
+
+// Denna funktion implementerar en kaskadregulator där den yttre loopen korrigerar positionen 
+//och den inre loopen korrigerar hastigheten. Den tar hänsyn till mekaniska gränser, 
+//statisk friktion och har en rampning av PWM för att få en mjukare rörelse.
 void moveCascade(motor &Motor, float refPosMm, float refVelMmS, float dt) {
   if (Motor.pulserPerMm <= 0.0f) {
     analogWrite(Motor.pwm, 0);
@@ -285,6 +284,7 @@ void moveCascade(motor &Motor, float refPosMm, float refVelMmS, float dt) {
     return;
   }
 
+  // Hitta motorindex för att kolla max pulser från kalibrering
   long motorIndex = -1;
   for (uint8_t i = 0; i < antalMotorer; i++) {
     if (allaMotorer[i] == &Motor) {
@@ -296,12 +296,13 @@ void moveCascade(motor &Motor, float refPosMm, float refVelMmS, float dt) {
   long nuvarandePulser = Motor.skyddadRaknare;
   float posMm = nuvarandePulser / Motor.pulserPerMm;
 
+  //max pulser gräns baserat på kalibrering eller mekaniska gränser
   long maxPulserLimit =
       (motorIndex >= 0 && maxPulserPerMotor[motorIndex] > 0)
       ? maxPulserPerMotor[motorIndex]
       : (long)(maxPositionMm * Motor.pulserPerMm);
 
-  // Hard safety stop
+  //säkerhetsstopp: om nuvarande pulser är utanför det mekaniska området, stoppa motorn och sätt iRorelse till false
   if (nuvarandePulser < 0 || nuvarandePulser > maxPulserLimit) {
     analogWrite(Motor.pwm, 0);
     Motor.integralHastighetsFel = 0.0f;
@@ -315,11 +316,11 @@ void moveCascade(motor &Motor, float refPosMm, float refVelMmS, float dt) {
 
   float posFelMm = refPosMm - posMm;
 
-  // Velocity feed-forward from Python plus position correction from Arduino
+  // Yttre position-till-hastighet regulator
   float velRefMmS = refVelMmS + kpPositionTillHastighet * posFelMm;
   velRefMmS = constrain(velRefMmS, -maxHastighetMmS, maxHastighetMmS);
 
-  // Do not command further into mechanical limits
+  //säkerhetsstopp för att inte köra utanför mekaniska gränser, tillåter rörelse tillbaka in i området
   if (posMm <= minPositionMm + 1.0f && velRefMmS < 0.0f) {
     velRefMmS = 0.0f;
   }
@@ -328,10 +329,11 @@ void moveCascade(motor &Motor, float refPosMm, float refVelMmS, float dt) {
     velRefMmS = 0.0f;
   }
 
+  // Uppdatera motorhastighet baserat på senaste räknare
   float velMmS = Motor.filtreradHastighetMmS;
   float velFelMmS = velRefMmS - velMmS;
 
-  // Stop only when target is basically stopped
+  // Om både position och hastighet är inom toleranser, stoppa motorn och nollställ integralen
   if (fabs(posFelMm) < positionToleransMm &&
       fabs(refVelMmS) < hastighetToleransMmS &&
       fabs(velMmS) < hastighetToleransMmS) {
@@ -342,18 +344,19 @@ void moveCascade(motor &Motor, float refPosMm, float refVelMmS, float dt) {
     return;
   }
 
-  // Velocity PI loop
+  // hastighetsregulator med integralkomponent, begränsad för att undvika vindup
   Motor.integralHastighetsFel += velFelMmS * dt;
   Motor.integralHastighetsFel =
       constrain(Motor.integralHastighetsFel,
                 -maxIntegralHastighet,
                 maxIntegralHastighet);
 
+  //styrsignalen
   float styrsignal =
       kpHastighet * velFelMmS +
       kiHastighet * Motor.integralHastighetsFel;
 
-  // Static friction compensation
+  
   if (fabs(velRefMmS) > 1.0f || fabs(posFelMm) > positionToleransMm) {
     if (styrsignal > 0.0f) {
       styrsignal += friktionsPWM;
@@ -369,7 +372,7 @@ void moveCascade(motor &Motor, float refPosMm, float refVelMmS, float dt) {
     pwm = minPWM;
   }
 
-  // PWM ramp for smoother current changes
+  // PWM ramp för smidigare motorsteg
   if (pwm > Motor.aktuellPWM) {
     Motor.aktuellPWM = min(Motor.aktuellPWM + pwmStegPerCykel, pwm);
   } else {
@@ -382,16 +385,14 @@ void moveCascade(motor &Motor, float refPosMm, float refVelMmS, float dt) {
   Motor.iRorelse = true;
 }
 
-// ==================================================
-// Calibration
-// ==================================================
+//kalibrering av alla motorer
 void kalibrering() {
   delay(200);
 
   Serial.println("=== CALIBRATION START ===");
   Serial.flush();
 
-  // Move all motors down to bottom
+  // Alla motorer ner
   for (uint8_t i = 0; i < antalMotorer; i++) {
     digitalWrite(allaMotorer[i]->dir, LOW);
     analogWrite(allaMotorer[i]->pwm, 255);
@@ -399,14 +400,14 @@ void kalibrering() {
 
   delay(4000);
 
-  // Stop all motors
+  // Stanna alla motorer
   for (uint8_t i = 0; i < antalMotorer; i++) {
     analogWrite(allaMotorer[i]->pwm, 0);
   }
 
   delay(1000);
 
-  // Zero pulse counters at bottom
+  //sätt nya värden på alla motorer
   for (uint8_t i = 0; i < antalMotorer; i++) {
     noInterrupts();
     allaMotorer[i]->pulseRaknare = 0;
@@ -423,7 +424,7 @@ void kalibrering() {
 
   delay(100);
 
-  // Move all motors up to find 100 mm range
+  // Kör alla motorer uppåt för att hitta 100 mm-området
   for (uint8_t i = 0; i < antalMotorer; i++) {
     digitalWrite(allaMotorer[i]->dir, HIGH);
     analogWrite(allaMotorer[i]->pwm, 255);
@@ -431,7 +432,7 @@ void kalibrering() {
 
   delay(10000);
 
-  // Stop all motors
+  // Stoppa alla motorer
   for (uint8_t i = 0; i < antalMotorer; i++) {
     analogWrite(allaMotorer[i]->pwm, 0);
   }
@@ -445,7 +446,7 @@ void kalibrering() {
   }
 
   delay(100);
-
+  
   for (uint8_t i = 0; i < antalMotorer; i++) {
     if (maxPulserPerMotor[i] == 0) {
       Serial.print("WARNING: Motor ");
@@ -469,7 +470,7 @@ void kalibrering() {
     allaMotorer[i]->iRorelse = false;
     allaMotorer[i]->aktuellPWM = 0;
 
-    // After calibration the actuators are at top, around 100 mm
+    // Efter kalibrering är motorerna i toppen, ungefär 100 mm
     malPosisjonerMm[i] = 100;
     malHastigheterMmS[i] = 0;
   }
@@ -494,7 +495,7 @@ void kalibrering() {
   Serial.println("=== CALIBRATION DONE ===");
   Serial.println();
 
-  // Clear serial bytes received during calibration
+  // Töm seriell buffert mottagen under kalibrering
   while (Serial.available() > 0) {
     Serial.read();
   }
@@ -502,9 +503,8 @@ void kalibrering() {
   rxIndex = 0;
 }
 
-// ==================================================
-// Packet helpers
-// ==================================================
+
+// Pakethjälpfunktioner
 uint16_t readU16LE(const uint8_t* p) {
   return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
 }
@@ -523,6 +523,7 @@ uint8_t beraknaKontrollSumma(const uint8_t* data, uint8_t langdUtanChecksum) {
   return (uint8_t)(sum & 0xFF);
 }
 
+//verifiera paket
 bool tolkaPaket(const uint8_t* buf, AktuatorPaket& pkt) {
   if (buf[0] != sync1 || buf[1] != sync2) {
     return false;
@@ -553,23 +554,20 @@ bool tolkaPaket(const uint8_t* buf, AktuatorPaket& pkt) {
   return true;
 }
 
-// ==================================================
-// Process incoming packet
-// ==================================================
+
+// Bearbeta mottaget paket
 void processPaket(const AktuatorPaket& pkt) {
   for (uint8_t i = 0; i < antalMotorer; i++) {
     malPosisjonerMm[i] = constrain((int)pkt.positionerMm[i], 0, 100);
 
-    // Negative velocities are allowed
+    // Negativa hastigheter är tillåtna
     malHastigheterMmS[i] = pkt.hastigheterMmS[i];
   }
 
   senastPaketMs = millis();
 }
 
-// ==================================================
-// Receive packet stream
-// ==================================================
+// Ta emot paket
 void mottagaPaket() {
   while (Serial.available() > 0) {
     uint8_t b = (uint8_t)Serial.read();
@@ -622,9 +620,8 @@ void mottagaPaket() {
   }
 }
 
-// ==================================================
-// Optional pin check
-// ==================================================
+
+// Valfri pin-kontroll
 void checkInterruptPin(int pin) {
   int checkPin = digitalPinToInterrupt(pin);
 
@@ -637,9 +634,8 @@ void checkInterruptPin(int pin) {
   }
 }
 
-// ==================================================
-// Setup
-// ==================================================
+
+// Initiering
 void setup() {
   Serial.begin(115200);
   delay(2000);
@@ -652,7 +648,7 @@ void setup() {
   // Motor A
   A.pwm = 6;
   A.dir = 32;
-  A.chn1 = 29; //31
+  A.chn1 = 29; 
   A.chn2 = 52;
 
   // Motor B
@@ -685,7 +681,7 @@ void setup() {
   F.chn1 = 60;
   F.chn2 = 53;
 
-  // Initialize pins
+  // Initiera pinnar
   for (uint8_t i = 0; i < antalMotorer; i++) {
     motor* m = allaMotorer[i];
 
@@ -699,7 +695,7 @@ void setup() {
     m->prevState = (digitalRead(m->chn1) << 1) | digitalRead(m->chn2);
   }
 
-  // Attach interrupts
+  // Koppla avbrott
   attachInterrupt(digitalPinToInterrupt(A.chn1), irqA1, CHANGE);
   attachInterrupt(digitalPinToInterrupt(A.chn2), irqA2, CHANGE);
 
@@ -736,12 +732,11 @@ void setup() {
   Serial.flush();
 }
 
-// ==================================================
-// Main loop
-// ==================================================
+// Huvudloop
 void loop() {
   updateraSkyddadRaknare();
 
+  //kollar om kalibreringen klar
   if (!kalibreringKlar) {
     return;
   }
@@ -771,7 +766,7 @@ void loop() {
       move(*allaMotorer[i], malPosisjonerMm[i]);
     } else {
       if (packetTimeout) {
-        // Hold current position if communication stops
+        // Behåll aktuell position om kommunikationen avbryts
         float currentPosMm = 0.0f;
 
         if (allaMotorer[i]->pulserPerMm > 0.0f) {
@@ -791,7 +786,7 @@ void loop() {
     }
   }
 
-  // Debug once per 10 ms
+  // Debugga varje 10 ms
   if (nuUs - senasteDebugPrintUs >= 100000UL) {
     Serial.print("Current/target pos:");
 
