@@ -6,19 +6,16 @@ All tuneable parameters in one place.
 import numpy as np
 from dataclasses import dataclass, field
 
+HORSE = "Baldur"  # "Albin" eller "Baldur" eller "Sinus" eller "Sigge" eller "Sam" välj häst
 
-# ─── Data selection ──────────────────────────────────────────────────────────
-
-HORSE = "Baldur"  # "Albin" or "Baldur" or "Sinus" or "Sigge" or "Sam"
-
-# Use a specific straight-section window index (0-6) or None for full recording
+# vilken raksträcka? none kör hela
 SEGMENT_INDEX: int | None = 4 #4
 
-# Serial port for the Arduino. Set this to e.g. "COM5" on Windows or "/dev/ttyACM0" on Linux.
-# Leave as None to auto-select the only available serial device when possible.
+# Serial port "COM5" Windows."/dev/ttyACM0" Linux.
+# None välj automatiskt
 SERIAL_PORT: str | None = None
 
-# Clap sync markers (seconds from recording start)
+# för att synka ljudet med videon, används inte i simuleringen
 CLAP_MARKERS = {
     "Albin": 260.22,
     "Baldur": 241.74,
@@ -27,7 +24,7 @@ CLAP_MARKERS = {
     "Sam": 0.0,
 }
 
-# Pre-annotated straight-riding segments [start, end] in seconds
+# definera raksträckor 
 STRAIGHT_WINDOWS = {
     "Baldur": np.array([
         [120, 125],
@@ -56,29 +53,26 @@ STRAIGHT_WINDOWS = {
 }
 
 
-# ─── Resampling ──────────────────────────────────────────────────────────────
 
-RESAMPLE_RATE_HZ = 100.0  # uniform sample rate for all signals
-
-
-# ─── Motion filtering ───────────────────────────────────────────────────────
+RESAMPLE_RATE_HZ = 100.0  # samplerate för mätdatan som vi resamplar till
 
 @dataclass
 class FilterConfig:
-    highpass_hz: float = 0.3    # removes drift / DC from integration
-    lowpass_hz: float = 4.0    # removes sensor noise & fast vibrations 
-    # 4.0 hz kanske filterar bort för mycket. stride brukar ligga 3-4 hz.
-    filter_order: int = 4       # Butterworth order (applied zero-phase)
+    highpass_hz: float = 0.3    #hp tar bort långsamma rörelse
+    lowpass_hz: float = 4.0    # lp sensorbrus
+  
+    filter_order: int = 4       # hur brant filter
 
 
 FILTER = FilterConfig()
 
 
-# ─── Stewart platform workspace limits ───────────────────────────────────────
+# max translation och rotation vi tillåter för plattformen
+# appliceras med en mjuk mättnadsfunktion 
 
 @dataclass
 class WorkspaceLimits:
-    """Maximum allowable motion for saturation (soft-clamp)."""
+    
     surge_m: float = 0.080      # ±80 mm
     sway_m: float = 0.080       # ±80 mm
     heave_m: float = 0.080      # ±80 mm
@@ -102,38 +96,39 @@ class WorkspaceLimits:
 WORKSPACE = WorkspaceLimits()
 
 
-# ─── Stewart platform geometry ───────────────────────────────────────────────
+# ─── Stewartplattformens geometri ───────────────────────────────────────────────
 
 @dataclass
 class PlatformGeometry:
     """6-6 Stewart–Gough platform geometry."""
-    base_radius_m: float = 0.21        # radius of base joint circle
-    platform_radius_m: float = 0.125    # radius of platform joint circle
-    neutral_height_m: float = 0.28     # height of platform above base at home, home position is centered at 50 mm actuator length
-    base_pair_half_angle_deg: float = 5.5   # half-angle within each pair of base joints
-    platform_pair_half_angle_deg: float = 9.0  # half-angle within each pair of platform joints
-    # platform_rotation_deg: float = 60.0  # rotation offset of platform pairs vs base pairs
-    platform_rotation_deg: float = 60.0  # rotation offset of platform pairs vs base pairs
+    base_radius_m: float = 0.21         # Basradie för den cirkel där de sex nedre lederna är fixerade i golvet
+    platform_radius_m: float = 0.125    # Plattformsradie för den cirkel där de sex övre lederna är fixerade i den rörliga plattformen
+    neutral_height_m: float = 0.28     # Vertikalt avstånd mellan bas och plattform i neutralläge, där hemmaläget är centrerat vid 50 mm
+    base_pair_half_angle_deg: float = 5.5   # Halva det interna vinkelparet mellan lederna i basen
+    platform_pair_half_angle_deg: float = 9.0  #  Halva det interna vinkelparet mellan lederna i plattformen
+    # platform_rotation_deg: float = 60.0  # Rotationsförskjutning mellan plattformens och basens ledpar
+    platform_rotation_deg: float = 60.0  # Rotationsförskjutning mellan plattformens och basens ledpar
 
-    platform_mass_kg: float = 10.0     # platform structure mass
-    rider_mass_kg: float = 5.0        # rider mass
-    saddle_mass_kg: float = 5.0       # saddle + mounting hardware
+    #användes för att dimensionera komponenter
+    platform_mass_kg: float = 10.0     # platformens tyngd
+    rider_mass_kg: float = 5.0        # personens tyngd
+    saddle_mass_kg: float = 5.0       # sadelns tyngd
 
     @property
     def total_mass_kg(self) -> float:
-        return self.platform_mass_kg + self.rider_mass_kg + self.saddle_mass_kg
+        return self.platform_mass_kg + self.rider_mass_kg + self.saddle_mass_kg #returerar bara totalvikten för dimensionering
 
 
 PLATFORM = PlatformGeometry()
 
 
-# ─── Visualization ───────────────────────────────────────────────────────────
+# ───  konstanter för animeringen ───────────────────────────────────────────────────────────
 
 @dataclass
 class VizConfig:
-    playback_speed: float = 1.0      # 1.0 = real time
-    animation_fps: int = 30           # frames per second for animation
-    trail_seconds: float = 1.0        # trailing path duration
+    playback_speed: float = 1.0      # återspelnings hastighet, 1 är normalhastighet
+    animation_fps: int = 30           # fps för animationen
+    trail_seconds: float = 1.0        # hur många sekunder av rörelsehistoriken ska visas i animationen
 
 
 VIZ = VizConfig()
