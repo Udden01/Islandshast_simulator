@@ -35,6 +35,9 @@ amplitud = 0.005   # meter
 freq = 0.2          # Hz
 axis = "all"      #  kan vara surge / sway / heave / all
 
+# Välj raksträckor för aktuell häst
+windows = STRAIGHT_WINDOWS[HORSE]
+
 #Funktion som skär ut en del av rörelsebanan
 def _slice_trajectory(traj: Trajectory6DOF, t0: float, t1: float) -> Trajectory6DOF: #kan användas för att bara köra en del av ridningen (en raksträcka)
     

@@ -45,10 +45,10 @@ STRAIGHT_WINDOWS = {
         [228, 234],
     ]),
     "Sinus": np.array([
-        [20, 90]
+        [20, 90],
     ]),
     "Sigge": np.array([
-        [10, 25]
+        [10, 25],
     ]),
 }
 

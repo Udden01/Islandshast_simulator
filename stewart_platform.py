@@ -1,9 +1,6 @@
-"""
-Stewart–Gough platform geometry, inverse kinematics, and actuator analysis.
 
-6-6 configuration: 6 base joints and 6 platform joints arranged in alternating
-pairs on circles of different radii.
-"""
+# Stewart–Gough-plattformens geometri, invers kinematik och aktuatoranalys.
+# 6-6 konfiguration: 6 basleder och 6 plattformsleder arrangerade i alternerande par på cirklar med olika radier.
 
 import numpy as np
 from dataclasses import dataclass
@@ -15,62 +12,57 @@ from motion_reconstruction import Trajectory6DOF
 # ─── Geometry ────────────────────────────────────────────────────────────────
 
 def _base_platform_angles(delta_b: float) -> np.ndarray:
-    """
-    Compute base platform attachment angles with +1 offset.
+    # Beräkna infästningsvinklar för basplattformen med +1-förskjutning.
+
+    # Vinklar för k ∈ [0, 5]:
+    #     θ_k = (2π/3)·floor((k+1)/2) + (-1)^k · (Δ_b/2)
     
-    Angles for k ∈ [0, 5]:
-        θ_k = (2π/3)·floor((k+1)/2) + (-1)^k · (Δ_b/2)
+    # Parametrar
+    # ----------
+    # delta_b : float
+    #     Halvvinkelseparation (i radianer) mellan benparen.
     
-    Parameters
-    ----------
-    delta_b : float
-        Half-angle separation (radians) between leg pairs.
-    
-    Returns
-    -------
-    angles : (6,) array of angles in radians.
-    """
+    # Returns
+    # -------
+    # angles : (6,) Array med 6 vinklar i radianer.
+
     k = np.arange(6)
     return (2 * np.pi / 3) * np.floor((k + 1) / 2) + ((-1) ** k) * (delta_b / 2)
 
 
 def _upper_platform_angles(delta_p: float, offset: float = np.pi / 3) -> np.ndarray:
-    """
-    Compute upper platform attachment angles.
+    # Beräkna infästningsvinklar för plattformen.
+
+    # Vinklar för k ∈ [0, 5]:
+    #     θ_k = (2π/3)·floor(k/2) - (-1)^k · (Δ_p/2) + offset
     
-    Angles for k ∈ [0, 5]:
-        θ_k = (2π/3)·floor(k/2) - (-1)^k · (Δ_p/2) + offset
+    # Parametrar
+    # ----------
+    # delta_p : float
+    #     Halvvinkelseparation (i radianer) mellan benparen.
+    # offset : float
+    #     Angulär förskjutning (standard π/3).
     
-    Parameters
-    ----------
-    delta_p : float
-        Half-angle separation (radians) between leg pairs.
-    offset : float
-        Angular offset (default π/3).
-    
-    Returns
-    -------
-    angles : (6,) array of angles in radians.
-    """
+    # Returns
+    # -------
+    # angles : (6,) Array med 6 vinklar i radianer.
     k = np.arange(6)
     return (2 * np.pi / 3) * np.floor(k / 2) - ((-1) ** k) * (delta_p / 2) + offset
 
 
 def _joint_positions_from_angles(radius: float, angles: np.ndarray) -> np.ndarray:
-    """
-    Compute 6 joint positions from angles on a circle.
+    # beräknar 6 joint(led) positioner från vinklar på en cirkel.
     
-    Parameters
-    ----------
-    radius : float
-        Radius of the circle.
-    angles : (6,) array
-        Angles in radians for each joint.
+    # Parametrar
+    # ----------
+    # radius : float
+    #     Radie i meter på cirkeln som lederna placeras på.
+    # angles : (6,) array
+    #     Vinklar i radianer för varje led.
     
-    Returns
-    -------
-    joints : (6, 3) array of [x, y, z] positions.
-    """
+    # Returns
+    # -------
+    # joints : (6, 3) array av [x, y, z] positioner.
     joints = np.zeros((6, 3))
     for i in range(6):
         joints[i, 0] = radius * np.cos(angles[i])
@@ -80,18 +72,16 @@ def _joint_positions_from_angles(radius: float, angles: np.ndarray) -> np.ndarra
 
 def _joint_positions_on_circle(radius: float, pair_half_angle_deg: float,
                                 offset_deg: float = 0.0) -> np.ndarray:
-    """
-    Compute 6 joint positions arranged in 3 pairs on a circle.
+    # beräknar 6 joint positioner arrangerade i 3 par på en cirkel.
 
-    Each pair of joints is separated by 2 × pair_half_angle_deg.
-    Pairs are spaced 120° apart.  An optional angular offset rotates
-    the entire pattern.
+    # Varje par av joints(leder) är separerade av 2 × pair_half_angle_deg.
+    # Par är utplacerade med 120° i mellan. En valfri "angular offset"(vinkel försjutning) roterar
+    # hela mönstret.
 
-    Returns
-    -------
-    joints : (6, 3) array of [x, y, z] positions (z=0 for base, z=0 for
-             platform in local frame).
-    """
+    # Returns
+    # -------
+    # joints : (6, 3) array av [x, y, z] positioner (z=0 for base, z=0 for
+    #          platform in local frame).
     joints = np.zeros((6, 3))
     for pair in range(3):
         centre_angle = np.radians(pair * 120.0 + offset_deg)
@@ -106,25 +96,25 @@ def _joint_positions_on_circle(radius: float, pair_half_angle_deg: float,
 
 @dataclass
 class StewartPlatform:
-    """Stewart platform geometry and inverse kinematics."""
+    # Stewart–plattform geometri och invers kinematik
 
-    base_joints: np.ndarray       # (6, 3) base attachment points
-    platform_joints_local: np.ndarray  # (6, 3) platform attachment points in platform frame
-    neutral_height: float         # metres
+    base_joints: np.ndarray       # (6, 3) bas infästningspunkter i världets koordinater
+    platform_joints_local: np.ndarray  # (6, 3) plattformens infästningspunkter i plattformens lokala koordinater
+    neutral_height: float         # meter, höjden i neutral position (surge=0, sway=0, heave=0, roll=0, pitch=0, yaw=0)
 
     @classmethod
     def from_config(cls) -> "StewartPlatform":
-        """Create a platform from config.py parameters."""
-        # Base platform with +1 offset
-        delta_b = np.radians(PLATFORM.base_pair_half_angle_deg)
-        base_angles = _base_platform_angles(delta_b)
-        base = _joint_positions_from_angles(PLATFORM.base_radius_m, base_angles)
+        #Skapar en platform baserat på konfigurationsparametrar från config.py.
+        # För basen används +1-förskjutning
+        delta_b = np.radians(PLATFORM.base_pair_half_angle_deg)# konvertera från grader till radianer
+        base_angles = _base_platform_angles(delta_b)# beräkna basvinklarna med +1-förskjutning
+        base = _joint_positions_from_angles(PLATFORM.base_radius_m, base_angles)# beräkna baslederna positioner på en cirkel med given radie och vinklar
         
-        # Upper/platform with standard offset scheme
-        delta_p = np.radians(PLATFORM.platform_pair_half_angle_deg)
-        platform_offset = np.radians(PLATFORM.platform_rotation_deg)
-        platform_angles = _upper_platform_angles(delta_p, offset=platform_offset)
-        plat = _joint_positions_from_angles(PLATFORM.platform_radius_m, platform_angles)
+        # För plattformen används standardförskjutning (π/3) som i _upper_platform_angles.
+        delta_p = np.radians(PLATFORM.platform_pair_half_angle_deg)# konvertera från grader till radianer
+        platform_offset = np.radians(PLATFORM.platform_rotation_deg)# konvertera plattformens rotationsförskjutning från grader till radianer
+        platform_angles = _upper_platform_angles(delta_p, offset=platform_offset)# beräkna plattformens vinklar med given halvvinkelseparation och rotationsförskjutning
+        plat = _joint_positions_from_angles(PLATFORM.platform_radius_m, platform_angles)# beräkna plattformens leder positioner i det lokala koordinatsystemet (z=0) på en cirkel med given radie och vinklar
         
         return cls(
             base_joints=base,
@@ -136,10 +126,11 @@ class StewartPlatform:
 
     @staticmethod
     def rotation_matrix(roll: float, pitch: float, yaw: float) -> np.ndarray:
-        """Rotation matrix R = Rz(yaw) · Ry(pitch) · Rx(roll)."""
+        # rotations matris R = Rz(yaw) · Ry(pitch) · Rx(roll)
         cr, sr = np.cos(roll), np.sin(roll)
         cp, sp = np.cos(pitch), np.sin(pitch)
         cy, sy = np.cos(yaw), np.sin(yaw)
+        
 
         return np.array([
             [cy * cp,  cy * sp * sr - sy * cr,  cy * sp * cr + sy * sr],
@@ -147,78 +138,82 @@ class StewartPlatform:
             [-sp,      cp * sr,                  cp * cr],
         ])
 
-    # ── Forward geometry (platform joints in world frame) ────────────────
+    # Geometri framåt: beräkna plattformens ledpositioner(joints) i världets koordinater för en given pose (surge, sway, heave, roll, pitch, yaw).
 
     def platform_joints_world(self, surge: float, sway: float, heave: float,
                                roll: float, pitch: float, yaw: float) -> np.ndarray:
-        """
-        Compute world-frame platform joint positions for a given pose.
+        # beräknar world-frame positioner för plattformens leder baserat på den lokala konfigurationen och den givna pose(position).
+        # Translationen är relativ till neutral position (0, 0, neutral_height).
 
-        Translation is relative to the neutral pose (0,0, neutral_height).
-        """
-        R = self.rotation_matrix(roll, pitch, yaw)
-        t = np.array([surge, sway, self.neutral_height + heave])
+        # Rotation och translation
+        R = self.rotation_matrix(roll, pitch, yaw)# beräkna rotationsmatrisen från roll, pitch, yaw
+        t = np.array([surge, sway, self.neutral_height + heave])# beräkna translationen i world frame baserat på surge, sway, heave och neutral height
 
         # Transform each platform joint
-        world = np.zeros((6, 3))
+        world = np.zeros((6, 3))# transformera varje plattformens led från lokal till världets koordinater genom att rotera och sedan translatera
         for i in range(6):
             world[i] = t + R @ self.platform_joints_local[i]
         return world
 
-    # ── Inverse kinematics ───────────────────────────────────────────────
+    # Inverse kinematrik
+    # För en given pose (surge, sway, heave, roll, pitch, yaw) beräknar leg vectors och leg lengths.
 
     def leg_vectors(self, surge: float, sway: float, heave: float,
                      roll: float, pitch: float, yaw: float) -> np.ndarray:
-        """
-        Compute the 6 leg vectors (platform_joint − base_joint).
+        # beräknar de 6 leg (ben) vektorerna (platform_joint − base_joint) för en given pose.
+        # Returns 
+        # -------
+        # legs : (6, 3) vektorer från basen till plattformens leder(joints).
 
-        Returns
-        -------
-        legs : (6, 3) vectors from base to platform joints.
-        """
+        # Först beräkna plattformens ledpositioner i världets koordinater, sedan subtrahera baslederna.
         pj = self.platform_joints_world(surge, sway, heave, roll, pitch, yaw)
         return pj - self.base_joints
 
     def leg_lengths(self, surge: float, sway: float, heave: float,
                      roll: float, pitch: float, yaw: float) -> np.ndarray:
-        """Compute the 6 leg lengths for a given pose.  Returns (6,) array."""
+        # beräknar de 6 ben(leg) längderna för en givenpose genom att ta normerna leg vektorerna. 
+        # Returns
+        # -------   
+        # lengths : (6,) array med längder i meter.
+
         legs = self.leg_vectors(surge, sway, heave, roll, pitch, yaw)
         return np.linalg.norm(legs, axis=1)
 
     @property
     def neutral_leg_length(self) -> float:
-        """Leg length at the home / neutral pose."""
+        # Beräknar benlängden i neutral position (surge=0, sway=0, heave=0, roll=0, pitch=0, yaw=0).
         return self.leg_lengths(0, 0, 0, 0, 0, 0)[0]
 
-    # ── Batch inverse kinematics over a trajectory ───────────────────────
+    # För varje sample i en 6-DOF-trajectory, beräkna leg lengths, velocities, accelerations, och uppskattade krafter.
 
     def compute_trajectory_ik(self, traj: Trajectory6DOF) -> "IKResult":
-        """
-        Run inverse kinematics for every sample in the trajectory.
+        # kör invers kinematik för varje sample i traj och beräkna leg lengths, velocities, accelerations, och uppskattade krafter.
+        # Returns 
+        # -------
+        # IKResult : en dataklass som innehåller arrays för leg lengths, velocities, accelerations, och forces för varje leg (ben) över tid.
 
-        Returns an IKResult with leg lengths, velocities, accelerations, and forces.
-        """
-        N = len(traj.time)
-        dt = 1.0 / traj.sample_rate
-
-        lengths = np.zeros((N, 6))
-        platform_joints = np.zeros((N, 6, 3))
+        # För enkelhetens skull kan krafter uppskattas som F = m/6 × (g + a_leg) per ben, där m är total massan av plattformen och a_leg är benets acceleration.
+        N = len(traj.time) # antal samples i traj
+        dt = 1.0 / traj.sample_rate # tidssteg mellan samples, används för att beräkna velocities och accelerations via central differences.
+    
+        lengths = np.zeros((N, 6))# array för att lagra benlängder över tid
+        platform_joints = np.zeros((N, 6, 3))# array för att lagra plattformens ledpositioner i världets koordinater över tid
 
         for i in range(N):
             pj = self.platform_joints_world(
                 traj.surge[i], traj.sway[i], traj.heave[i],
                 traj.roll[i], traj.pitch[i], traj.yaw[i],
-            )
+            )# beräknar plattformens ledpositioner i världets koordinater för varje sample i traj
             platform_joints[i] = pj
             lengths[i] = np.linalg.norm(pj - self.base_joints, axis=1)
 
-        # Velocities and accelerations via central differences
-        velocities = np.gradient(lengths, dt, axis=0)
-        accelerations = np.gradient(velocities, dt, axis=0)
+        #hastigheter och accelerationer genom central differences: v[i] ≈ (x[i+1] - x[i-1]) / (2*dt) och a[i] ≈ (v[i+1] - v[i-1]) / (2*dt)
+        velocities = np.gradient(lengths, dt, axis=0)# beräkna benhastigheter över tid
+        accelerations = np.gradient(velocities, dt, axis=0)# beräkna benaccelerationer över tid
 
-        # Simplified force estimation: F = m/6 × (g + a_leg) per leg
-        mass_per_leg = PLATFORM.total_mass_kg / 6.0
-        forces = mass_per_leg * (9.81 + accelerations)  # very rough estimate
+        #simplifierad kraftuppskattning: F = m/6 × (g + a_leg) per ben, där m är total massan av plattformen och a_leg är benets acceleration.
+        mass_per_leg = PLATFORM.total_mass_kg / 6.0# uppskatta kraften på varje ben baserat på dess acceleration och tyngdkraften
+        forces = mass_per_leg * (9.81 + accelerations)  # 9.81 m/s² är tyngdaccelerationen, väldigt grov uppskattning som inte tar hänsyn till dynamiska effekter eller benens riktning.
 
         return IKResult(
             time=traj.time,
@@ -229,23 +224,24 @@ class StewartPlatform:
             platform_joints=platform_joints,
             base_joints=self.base_joints.copy(),
             sample_rate=traj.sample_rate,
-        )
+        )# returnera en IKResult dataklass som innehåller alla beräknade arrays och information.
 
 
 @dataclass
 class IKResult:
-    """Results from running inverse kinematics over a trajectory."""
-    time: np.ndarray             # (N,) seconds
-    leg_lengths: np.ndarray      # (N, 6) metres
+    #resultatet från att köra invers kinematik över en trajectory, inklusive benlängder, hastigheter, accelerationer, och uppskattade krafter över tid.
+    time: np.ndarray             # (N,) sekunder
+    leg_lengths: np.ndarray      # (N, 6) meter
     leg_velocities: np.ndarray   # (N, 6) m/s
     leg_accelerations: np.ndarray  # (N, 6) m/s²
-    leg_forces: np.ndarray       # (N, 6) Newtons (rough estimate)
-    platform_joints: np.ndarray  # (N, 6, 3) world positions
-    base_joints: np.ndarray      # (6, 3) fixed base positions
+    leg_forces: np.ndarray       # (N, 6) Newtons (grov uppskattning)
+    platform_joints: np.ndarray  # (N, 6, 3) world positioner för plattformens leder över tid
+    base_joints: np.ndarray      # (6, 3) fixerade base(bas) positioner
     sample_rate: float
 
     def print_actuator_summary(self):
         """Print a table of actuator requirements."""
+        #Printer en tabell som sammanfattar aktuatorernas krav
         neutral = np.mean(self.leg_lengths, axis=0)
 
         print("\n╔══════════════════════════════════════════════════════════════════╗")
@@ -258,8 +254,8 @@ class IKResult:
         print("╠══════════════════════════════════════════════════════════════════╣")
 
         for leg in range(6):
-            L = self.leg_lengths[:, leg] * 1000  # to mm
-            V = np.abs(self.leg_velocities[:, leg]) * 1000  # to mm/s
+            L = self.leg_lengths[:, leg] * 1000  # till mm
+            V = np.abs(self.leg_velocities[:, leg]) * 1000  # till mm/s
             F = np.abs(self.leg_forces[:, leg])  # N
 
             print(f"║  {leg + 1:>3d}  {neutral[leg] * 1000:>8.1f}  "
@@ -269,7 +265,7 @@ class IKResult:
 
         print("╠══════════════════════════════════════════════════════════════════╣")
 
-        # Overall maximums
+        # Maximum värden 
         all_stroke = (self.leg_lengths.max(axis=0) - self.leg_lengths.min(axis=0)) * 1000
         all_vel = np.abs(self.leg_velocities).max(axis=0) * 1000
         all_force = np.abs(self.leg_forces).max(axis=0)
